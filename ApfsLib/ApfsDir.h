@@ -41,6 +41,8 @@ public:
 		std::string name;
 		APFS_DStream sizes;
 		uint64_t unk_param;
+
+		bool isCompressed() const { return ino.isCompressed(); }
 	};
 
 	struct Name
@@ -67,6 +69,7 @@ public:
 	bool LookupName(Name &res, uint64_t parent_id, const char *name);
 	bool ReadFile(void *data, uint64_t inode, uint64_t offs, size_t size);
 	bool ListAttributes(std::vector<std::string> &names, uint64_t inode);
+	uint16_t GetAttributeSize(uint64_t inode, const char* name); // return 0 if not found
 	bool GetAttribute(std::vector<uint8_t> &data, uint64_t inode, const char *name);
 
 private:

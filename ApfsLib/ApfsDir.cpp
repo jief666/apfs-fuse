@@ -380,6 +380,27 @@ bool ApfsDir::ListAttributes(std::vector<std::string>& names, uint64_t inode)
 	return true;
 }
 
+uint16_t ApfsDir::GetAttributeSize(uint64_t inode, const char* name)
+{
+	APFS_Xattr_Key skey;
+	const APFS_Xattr_Val *attr;
+
+	BTreeEntry res;
+	bool rc;
+
+	skey.inode_key = inode | KeyType_Xattr;
+	skey.name_len = strlen(name) + 1;
+	strcpy_s(skey.name, name);
+
+	rc = m_bt.Lookup(res, &skey, 10 + skey.name_len, CompareStdDirKey, this, true);
+	if (!rc)
+		return false;
+
+	attr = reinterpret_cast<const APFS_Xattr_Val *>(res.val);
+
+	return attr->size;
+}
+
 bool ApfsDir::GetAttribute(std::vector<uint8_t>& data, uint64_t inode, const char* name)
 {
 	APFS_Xattr_Key skey;
@@ -425,7 +446,7 @@ bool ApfsDir::GetAttribute(std::vector<uint8_t>& data, uint64_t inode, const cha
 			std::cout << "  unk@28  : " << alnk->stream.unk_20 << std::endl;
 
 			Inode inode_info;
-			bool rc;
+//			bool rc;
 
 			rc = GetInode(inode_info, alnk->obj_id);
 

@@ -203,6 +203,9 @@ struct APFS_Inode_Val
 	le<uint16_t> pad1;
 	le<uint64_t> uncompressed_size; // Usually 0, sometimes contains the decompressed size of compressed files
 	// XF may follow here ...
+
+	bool isCompressed() const { return (bsd_flags & 0x20) != 0; }
+
 };
 
 struct APFS_DStream // INO_EXT_TYPE_DSTREAM
