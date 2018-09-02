@@ -31,7 +31,6 @@
 #include <stdio.h>
 
 #include "Util.h"
-#include "Crc32.h"
 
 #include <zlib.h>
 #include <bzlib.h>
@@ -40,8 +39,9 @@ extern "C" {
 #include <lzfse.h>
 #include <lzvn_decode_base.h>
 }
+#include "APFSLibCrypto.h"
 
-static Crc32 g_crc(true, 0x1EDC6F41);
+//static Crc32 g_crc(true, 0x1EDC6F41);
 
 uint64_t Fletcher64(const uint32_t *data, size_t cnt, uint64_t init)
 {
@@ -253,10 +253,10 @@ uint32_t HashFilename(const char* utf8str, uint16_t name_len, bool case_fold)
 	}
 #endif
 
-	g_crc.SetCRC(0xFFFFFFFF);
-	g_crc.Calc(reinterpret_cast<const byte_t *>(utf32_nfd.data()), utf32_nfd.size() * sizeof(char32_t));
-
-	hash = g_crc.GetCRC();
+//	g_crc.SetCRC(0xFFFFFFFF);
+//	g_crc.Calc(reinterpret_cast<const byte_t *>(utf32_nfd.data()), utf32_nfd.size() * sizeof(char32_t));
+//	hash = g_crc.GetCRC();
+	hash = APFSLibCrypto_calculate_crc32c(0xFFFFFFFF, reinterpret_cast<const byte_t *>(utf32_nfd.data()), utf32_nfd.size() * sizeof(char32_t));
 
 	hash = ((hash & 0x3FFFFF) << 10) | (name_len & 0x3FF);
 

@@ -24,7 +24,6 @@
 #include "DiskStruct.h"
 #include "ApfsNodeMapperBTree.h"
 #include "BTree.h"
-#include "AesXts.h"
 
 class ApfsContainer;
 class BlockDumper;
@@ -38,6 +37,7 @@ public:
 	bool Init(uint64_t blkid_volhdr);
 
 	const char *name() const { return m_sb.apfs_volname; }
+	const APFS_Superblock_APSB& apfsContainer() { return m_sb; }
 
 	void dump(BlockDumper &bd);
 
@@ -61,5 +61,5 @@ private:
 	uint64_t m_blockid_sb;
 
 	bool m_is_encrypted;
-	AesXts m_aes;
+	void* m_xts;
 };

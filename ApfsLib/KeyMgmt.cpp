@@ -6,9 +6,8 @@
 #include <limits.h>
 
 #include "ApfsContainer.h"
-#include "AesXts.h"
-#include "Sha256.h"
-#include "Crypto.h"
+#include "APFSLibCrypto.h"
+
 #include "Util.h"
 #include "BlockDumper.h"
 
@@ -485,12 +484,12 @@ void Keybag::dump(std::ostream &st, Keybag *cbag, const apfs_uuid_t &vuuid)
 						GetPassword(pw);
 
 						st << "[Decryption Check]" << endl;
-						PBKDF2_HMAC_SHA256(reinterpret_cast<const uint8_t *>(pw.c_str()), pw.size(), kek.salt, sizeof(kek.salt), kek.iterations, dk, sizeof(dk));
+						APFSLibCrypto_PBKDF2_HMAC_SHA256(reinterpret_cast<const uint8_t *>(pw.c_str()), pw.size(), kek.salt, sizeof(kek.salt), kek.iterations, dk, sizeof(dk));
 						st << "PW DKey : " << hexstr(dk, sizeof(dk)) << endl;
 						if (kek.unk_82.unk_00 == 0 || kek.unk_82.unk_00 == 0x10)
-							Rfc3394_KeyUnwrap(kekk, kek.wrapped_kek, 0x20, dk, AES::AES_256, &iv);
+							APFSLibCrypto_Rfc3394_KeyUnwrap(kekk, kek.wrapped_kek, 0x20, dk, 256, &iv);
 						else if (kek.unk_82.unk_00 == 2)
-							Rfc3394_KeyUnwrap(kekk, kek.wrapped_kek, 0x10, dk, AES::AES_128, &iv);
+							APFSLibCrypto_Rfc3394_KeyUnwrap(kekk, kek.wrapped_kek, 0x10, dk, 128, &iv);
 						else
 						{
 							st << "kek/82/00 = " << kek.unk_82.unk_00 << " ???" << endl;
@@ -514,9 +513,9 @@ void Keybag::dump(std::ostream &st, Keybag *cbag, const apfs_uuid_t &vuuid)
 									if (KeyManager::DecodeVEKBlob(vek, bhdr.blob))
 									{
 										if (vek.unk_82.unk_00 == 0)
-											Rfc3394_KeyUnwrap(vekk, vek.wrapped_vek, 0x20, kekk, AES::AES_256, &iv);
+											APFSLibCrypto_Rfc3394_KeyUnwrap(vekk, vek.wrapped_vek, 0x20, kekk, 256, &iv);
 										else if (vek.unk_82.unk_00 == 2)
-											Rfc3394_KeyUnwrap(vekk, vek.wrapped_vek, 0x10, kekk, AES::AES_128, &iv);
+											APFSLibCrypto_Rfc3394_KeyUnwrap(vekk, vek.wrapped_vek, 0x10, kekk, 128, &iv);
 										else
 										{
 											st << "vek/82/00 = " << vek.unk_82.unk_00 << " ???" << endl;
@@ -662,16 +661,16 @@ bool KeyManager::GetVolumeKey(uint8_t* vek, const apfs_uuid_t& volume_uuid, cons
 			continue;
 
 		assert(kek_blob.iterations <= INT_MAX);
-		PBKDF2_HMAC_SHA256(reinterpret_cast<const uint8_t *>(password), strlen(password), kek_blob.salt, sizeof(kek_blob.salt), int(kek_blob.iterations), dk, sizeof(dk));
+		APFSLibCrypto_PBKDF2_HMAC_SHA256(reinterpret_cast<const uint8_t *>(password), strlen(password), kek_blob.salt, sizeof(kek_blob.salt), kek_blob.iterations, dk, sizeof(dk));
 
 		switch (kek_blob.unk_82.unk_00)
 		{
 		case 0x00:
 		case 0x10:
-			rc = Rfc3394_KeyUnwrap(kek, kek_blob.wrapped_kek, 0x20, dk, AES::AES_256, &iv);
+			rc = APFSLibCrypto_Rfc3394_KeyUnwrap(kek, kek_blob.wrapped_kek, 0x20+8, dk, 256, &iv);
 			break;
 		case 0x02:
-			rc = Rfc3394_KeyUnwrap(kek, kek_blob.wrapped_kek, 0x10, dk, AES::AES_128, &iv);
+			rc = APFSLibCrypto_Rfc3394_KeyUnwrap(kek, kek_blob.wrapped_kek, 0x10+8, dk, 128, &iv);
 			break;
 		default:
 			std::cerr << "Unknown KEK key flags 82/00 = " << std::hex << kek_blob.unk_82.unk_00 << ". Please file a bug report." << std::endl;
@@ -715,24 +714,18 @@ bool KeyManager::GetVolumeKey(uint8_t* vek, const apfs_uuid_t& volume_uuid, cons
 	{
 		// AES-256. This method is used for wrapping the whole XTS-AES key,
 		// and applies to non-FileVault encrypted APFS volumes.
-		rc = Rfc3394_KeyUnwrap(vek, vek_blob.wrapped_vek, 0x20, kek, AES::AES_256, &iv);
+		rc = APFSLibCrypto_Rfc3394_KeyUnwrap(vek, vek_blob.wrapped_vek, 0x20+8, kek, 256, &iv);
 	}
 	else if (vek_blob.unk_82.unk_00 == 2)
 	{
 		// AES-128. This method is used for FileVault and CoreStorage encrypted
 		// volumes that have been converted to APFS.
-		rc = Rfc3394_KeyUnwrap(vek, vek_blob.wrapped_vek, 0x10, kek, AES::AES_128, &iv);
+		rc = APFSLibCrypto_Rfc3394_KeyUnwrap(vek, vek_blob.wrapped_vek, 0x10+8, kek, 128, &iv);
 
 		if (rc)
 		{
-			SHA256 sha;
 			uint8_t sha_result[0x20];
-			sha.Init();
-
-			// Use (VEK || vek_blob.uuid), then SHA256, then take the first 16 bytes
-			sha.Update(vek, 0x10);
-			sha.Update(vek_blob.uuid, 0x10);
-			sha.Final(sha_result);
+			APFSLibCrypto_SHA256(vek, 0x10, vek_blob.uuid, 0x10, sha_result);
 			memcpy(vek + 0x10, sha_result, 0x10);
 		}
 	}
@@ -836,20 +829,20 @@ bool KeyManager::LoadKeybag(Keybag& bag, uint32_t type, uint64_t block, uint64_t
 
 void KeyManager::DecryptBlocks(uint8_t* data, uint64_t block, uint64_t cnt, const uint8_t* key)
 {
-	AesXts xts;
+//	AesXts xts;
 	size_t k;
 	size_t size;
 	uint64_t uno;
 	uint64_t cs_factor = m_container.GetBlocksize() / 0x200;
 
-	xts.SetKey(key, key);
+	APFSLibCrypto_aes_xtx_setkey(key, 16, key, 16);
 
 	uno = block * cs_factor;
 	size = m_container.GetBlocksize() * cnt;
 
 	for (k = 0; k < size; k += 0x200)
 	{
-		xts.Decrypt(data + k, data + k, 0x200, uno);
+		APFSLibCrypto_aes_xtx_decrypt(data+k, 0x200, data+k, uno);
 		uno++;
 	}
 }
@@ -860,19 +853,14 @@ bool KeyManager::VerifyBlob(const bagdata_t & keydata, bagdata_t & contents)
 
 	KeyParser parser;
 	blob_header_t bhdr;
-	SHA256 sha;
 	uint8_t hmac_key[0x20];
 	uint8_t hmac_calc[0x20];
 
 	if (!DecodeBlobHeader(bhdr, keydata))
 		return false;
 
-	sha.Init();
-	sha.Update(blob_cookie, 6);
-	sha.Update(bhdr.salt, 8);
-	sha.Final(hmac_key);
-
-	HMAC_SHA256(hmac_key, 0x20, bhdr.blob.data, bhdr.blob.size, hmac_calc);
+	APFSLibCrypto_SHA256(blob_cookie, 6, bhdr.salt, 8, hmac_key);
+	APFSLibCrypto_HMAC_SHA256(hmac_key, 0x20, bhdr.blob.data, bhdr.blob.size, hmac_calc);
 
 	if (memcmp(bhdr.hmac, hmac_calc, 0x20) != 0)
 		return false;

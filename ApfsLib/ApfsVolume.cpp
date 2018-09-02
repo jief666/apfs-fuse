@@ -28,6 +28,8 @@
 #include "BlockDumper.h"
 #include "Util.h"
 
+#include "APFSLibCrypto.h"
+
 ApfsVolume::ApfsVolume(ApfsContainer &container) :
 	m_container(container),
 	m_nodemap_dir(container),
@@ -37,10 +39,12 @@ ApfsVolume::ApfsVolume(ApfsContainer &container) :
 {
 	m_blockid_sb = 0;
 	m_is_encrypted = false;
+	m_xts = NULL;
 }
 
 ApfsVolume::~ApfsVolume()
 {
+	if (m_xts) free(m_xts);
 }
 
 bool ApfsVolume::Init(uint64_t blkid_volhdr)
@@ -87,7 +91,7 @@ bool ApfsVolume::Init(uint64_t blkid_volhdr)
 			}
 		}
 
-		m_aes.SetKey(vek, vek + 0x10);
+		APFSLibCrypto_aes_xtx_setkey(vek, 16, vek+16, 16, &m_xts);
 		m_is_encrypted = true;
 	}
 
@@ -140,7 +144,7 @@ bool ApfsVolume::ReadBlocks(byte_t * data, uint64_t blkid, uint64_t blkcnt, bool
 
 	for (k = 0; k < size; k += 0x200)
 	{
-		m_aes.Decrypt(data + k, data + k, 0x200, uno);
+		APFSLibCrypto_aes_xtx_decrypt(data+k, 0x200, data+k, uno, m_xts);
 		uno++;
 	}
 
