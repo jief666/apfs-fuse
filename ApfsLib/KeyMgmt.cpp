@@ -4,6 +4,7 @@
 #include <sstream>
 #include <assert.h>
 #include <limits.h>
+#include <cstddef> // ptrdiff_t
 
 #include "ApfsContainer.h"
 #include "APFSLibCrypto.h"
