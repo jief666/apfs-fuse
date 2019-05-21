@@ -23,10 +23,12 @@
 #include "BTree.h"
 #include "DiskStruct.h"
 #include "Device.h"
+#include "CheckPointMap.h"
 #include "ApfsNodeMapperBTree.h"
 #include "KeyMgmt.h"
 
 #include <cstdint>
+#include <vector>
 
 class ApfsVolume;
 class BlockDumper;
@@ -34,18 +36,21 @@ class BlockDumper;
 class ApfsContainer
 {
 public:
-	ApfsContainer(Device &disk, uint64_t start/*, uint64_t len*/);
+	ApfsContainer(Device *disk_main, uint64_t main_start, uint64_t main_len, Device *disk_tier2 = 0, uint64_t tier2_start = 0, uint64_t tier2_len = 0);
 	~ApfsContainer();
 
 	bool Init();
 
-	ApfsVolume *GetVolume(int index, const std::string &passphrase = std::string());
-	int GetVolumeCnt() const;
+	ApfsVolume *GetVolume(unsigned int index, const std::string &passphrase = std::string());
+	unsigned int GetVolumeCnt() const;
+	bool GetVolumeInfo(unsigned int fsid, apfs_superblock_t &apsb);
 
-	bool ReadBlocks(byte_t *data, uint64_t blkid, uint64_t blkcnt = 1) const;
-	bool ReadAndVerifyHeaderBlock(byte_t *data, uint64_t blkid) const;
+	bool ReadBlocks(uint8_t *data, paddr_t paddr, uint64_t blkcnt = 1) const;
+	bool ReadAndVerifyHeaderBlock(uint8_t *data, paddr_t paddr) const;
 
-	uint32_t GetBlocksize() const { return m_sb.nx_block_size; }
+	uint32_t GetBlocksize() const { return m_nx.nx_block_size; }
+	uint64_t GetBlockCount() const { return m_nx.nx_block_count; }
+	uint64_t GetFreeBlocks() const { return m_sm->sm_dev[SD_MAIN].sm_free_count + m_sm->sm_dev[SD_TIER2].sm_free_count; }
 
 	bool GetVolumeKey(uint8_t *key, const apfs_uuid_t &vol_uuid, const char *password = nullptr);
 	bool GetPasswordHint(std::string &hint, const apfs_uuid_t &vol_uuid);
@@ -53,22 +58,28 @@ public:
 	void dump(BlockDumper& bd);
 
 private:
-	Device &m_disk;
-	const uint64_t m_part_start;
-//	const uint64_t m_part_len; // Currently not used.
+	Device *m_main_disk;
+	const uint64_t m_main_part_start;
+	const uint64_t m_main_part_len;
+
+	Device *m_tier2_disk;
+	const uint64_t m_tier2_part_start;
+	const uint64_t m_tier2_part_len;
 
 	std::string m_passphrase;
 
-	APFS_NX_Superblock m_sb;
+	nx_superblock_t m_nx;
 
-//	APFS_Block_8_5_Spaceman m_spaceman_hdr;
-	// Block_8_11 ?
+	CheckPointMap m_cpm;
+	ApfsNodeMapperBTree m_omap;
 
-	ApfsNodeMapperBTree m_nodemap_vol;
+	std::vector<uint8_t> m_sm_data;
+	const spaceman_phys_t *m_sm;
+	// Block_8_11 -> omap
 
-	BTree m_nidmap_bt; // 4_2/B
-	BTree m_oldmgr_bt; // 8_2/9
-	BTree m_oldvol_bt; // 8_2/9
+	// BTree m_omap_tree; // see ApfsNodeMapperBTree
+	BTree m_fq_tree_mgr;
+	BTree m_fq_tree_vol;
 
 	KeyManager m_keymgr;
 };

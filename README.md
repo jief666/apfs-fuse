@@ -1,3 +1,4 @@
+
 # APFS FUSE Driver for Linux
 
 This project is a read-only FUSE driver for the new Apple File System. Since Apple didn't yet document
@@ -25,8 +26,7 @@ should just report an error.
 ### Compile the source code
 The following libraries are needed (including the -dev/-devel packages):
 
-* FUSE 2.6 or greater
-* ICU (Only on Linux)
+* FUSE 2.6 or greater (on 32-bit systems, FUSE 3.0 or greater)
 * zlib
 * bzip2
 * libattr (on some Linux distributions)
@@ -39,7 +39,7 @@ Development tools:
 Example for Linux:
 ```
 sudo apt update
-sudo apt install fuse libfuse-dev libicu-dev bzip2 libbz2-dev cmake gcc-c++ git libattr1-dev
+sudo apt install fuse libfuse-dev bzip2 libbz2-dev cmake gcc-c++ git libattr1-dev
 ```
 Clone the repository:
 ```
@@ -55,16 +55,22 @@ Compile the driver:
 mkdir build
 cd build
 cmake ..
+ccmake . # Only if you want to change build options
 make
 ```
 After compilation, the binaries are located in `bin`.
+
+Note that the driver uses FUSE 3.0 by default (required on 32-bit systems). If
+you want do compile using FUSE 2.6, use `ccmake .` to change the option
+`USE_FUSE3` to `OFF`.
 
 ### Mount a drive
 ```
 apfs-fuse <device> <mount-directory>
 ```
-Supported options:
+#### Supported options:
 * `-d n`: If n > 0, enable debug output (see below for details).
+* `-f device`: Specify secondary device for Fusion drive.
 * `-o opts`: Comma-separated list of mount options.
 * `-l`: Lax mode: when unexpected data is encountered, try to continue, even if this means
   data returning potentially incorrect data.
@@ -85,7 +91,7 @@ the volume can be specified by the `-v` option.
 If a volume is encrypted, the apfs-fuse command will prompt for a password, unless a password or PRK is
 specified on the command line. The PRK can also be used as password.
 
-**NEW**: It is now possible to directly mount DMG files. The driver will automatically detect if a dmg
+It is also possible to directly mount DMG files. The driver will automatically detect if a dmg
 has to be mounted and take appropriate action. If a dmg is encrypted, you will be asked for the password.
 Note that dmg support is currently a bit slow (especially when compressed), but it should work properly.
 
@@ -98,7 +104,32 @@ mentioned below together, and use the result as parameter for -d.
 * 8 Display information about on-the-fly compression
 * 16 Display information about cryptographic operations (caution, displays keys as well)
 
+#### Mount options (-o ...)
+In addition to the mount options supported by fuse, the following mount options are supported:
+* uid=n: Pretend that all files have UID n.
+* gid=n: Pretend that all files have GID n.
+* vol=n: Same as -v, specify the volume number to mount if you don't want volume 0.
+* blksize=n: Set the physical block size (default: 512 bytes).
+* pass=...: Specify volume passphrase (same as -r).
+
+The blksize parameter is required for proper partition table parsing on some newer
+macs.
+
+If you mount a volume as root and want some user to be able to access it, use:
+```
+apfs-fuse -o uid=<uid>,gid=<gid>,allow_other /dev/<device> <mount-path>
+```
+
+If you want to mount a device as user, add yourself to the disk group. This might not be too safe though,
+as it allows any application to read and write anywhere on a drive.
+
 ### Unmount a drive
+As root:
+```
+umount <mount-directory>
+```
+
+As user:
 ```
 fusermount -u <mount-directory>
 ```
@@ -113,13 +144,14 @@ The following features are implemented:
 * Extended attributes
 * Encryption (at least full-disk encryption)
 * Automatic detection of GPT partition tables
-* **NEW**: Direct mounting of DMG images (supports zlib/adc compression and encryption)
+* Direct mounting of DMG images (supports zlib/adc compression and encryption)
 
 ## Limitations
 These things are not supported (yet):
 
 * Transparent decompression of LZFSE
 * Writing
+* Mounting of hardware-encrypted volumes (internal drives of MacBook Pro's with T2 chip)
 
 ## Debugging
 
@@ -152,6 +184,7 @@ And then send the output of `backtrace` to me. Adding `-d 1` to options might he
 it will generate a lot of output on the text console.
 
 ### Some tools that might be useful
+#### apfs-dump-quick
 
 If you encounter problems with some file, it may be that I overlooked something during reverse engineering. In that
 case, you can use the `apfs-dump-quick` command to dump the management structures of the whole drive. It can be run
@@ -163,7 +196,7 @@ The tool will dump the most current version of the disk structures into a logfil
 a few 100 MB. So to limit the amount of information to report, look for the name of the file in the log. Try to find a
 line starting with `File` and containing the filename. The number immediately after `File` is the ID. Find all lines
 having this ID, and include them in your bug report.
-
+#### apfs-dump
 There is another command available:
 ```
 apfs-dump <drive> <logfile.txt>
@@ -171,3 +204,9 @@ apfs-dump <drive> <logfile.txt>
 This tool was the one I originally used for reverse engineering. It will scan the whole volume for clusters having
 correct checksums (and thus being part of some management structure), and then it will try to dump them. This will
 take a very long time to run on big volumes, and create huge log files. So using the quick version will be much faster.
+#### apfsutil
+```
+apfsutil <device>
+```
+This is a new tool that just displays some information from a container. For now, it lists the volumes a container
+contains. This tool might be extended in the future.

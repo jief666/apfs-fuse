@@ -41,8 +41,6 @@ extern "C" {
 }
 #include "APFSLibCrypto.h"
 
-//static Crc32 g_crc(true, 0x1EDC6F41);
-
 uint64_t Fletcher64(const uint32_t *data, size_t cnt, uint64_t init)
 {
 	size_t k;
@@ -81,7 +79,7 @@ bool VerifyBlock(const void *block, size_t size)
 	return cs == 0;
 }
 
-bool IsZero(const byte_t *data, size_t size)
+bool IsZero(const uint8_t* data, size_t size)
 {
 	for (size_t k = 0; k < size; k++)
 	{
@@ -104,12 +102,12 @@ bool IsEmptyBlock(const void *data, size_t blksize)
 	return true;
 }
 
-void DumpHex(std::ostream &os, const byte_t *data, size_t size, size_t lineSize)
+void DumpHex(std::ostream &os, const uint8_t *data, size_t size, size_t lineSize)
 {
 	using namespace std;
 
 	size_t i, j;
-	byte_t b;
+	uint8_t b;
 
 	if (size == 0)
 		return;
@@ -174,7 +172,23 @@ std::string uuidstr(const apfs_uuid_t &uuid)
 	return st.str();
 }
 
-void dump_utf8(std::ostream &st, const char* str)
+std::string hexstr(const uint8_t *data, size_t size)
+{
+	using namespace std;
+
+	std::ostringstream st;
+
+	size_t k;
+
+	st << hex << uppercase << setfill('0');
+
+	for (k = 0; k < size; k++)
+		st << setw(2) << static_cast<unsigned int>(data[k]);
+
+	return st.str();
+}
+
+void dump_utf8(std::ostream &st, const uint8_t* str)
 {
 	size_t ptr = 0;
 	uint8_t ch;
@@ -235,7 +249,7 @@ void dump_utf32(std::ostream &st, const char32_t *str, size_t size)
 	st << std::endl;
 }
 
-uint32_t HashFilename(const char* utf8str, uint16_t name_len, bool case_fold)
+uint32_t HashFilename(const uint8_t* utf8str, uint16_t name_len, bool case_fold)
 {
 	std::vector<char32_t> utf32;
 	std::vector<char32_t> utf32_nfd;
@@ -253,17 +267,14 @@ uint32_t HashFilename(const char* utf8str, uint16_t name_len, bool case_fold)
 	}
 #endif
 
-//	g_crc.SetCRC(0xFFFFFFFF);
-//	g_crc.Calc(reinterpret_cast<const byte_t *>(utf32_nfd.data()), utf32_nfd.size() * sizeof(char32_t));
-//	hash = g_crc.GetCRC();
-	hash = APFSLibCrypto_calculate_crc32c(0xFFFFFFFF, reinterpret_cast<const byte_t *>(utf32_nfd.data()), utf32_nfd.size() * sizeof(char32_t));
+	hash = APFSLibCrypto_calculate_crc32c(0xFFFFFFFF, (const unsigned char*)(utf32_nfd.data()), utf32_nfd.size() * sizeof(char32_t));
 
 	hash = ((hash & 0x3FFFFF) << 10) | (name_len & 0x3FF);
 
 	return hash;
 }
 
-int StrCmpUtf8NormalizedFolded(const char* s1, const char* s2, bool case_fold)
+int StrCmpUtf8NormalizedFolded(const uint8_t* s1, const uint8_t* s2, bool case_fold)
 {
 	std::vector<char32_t> s1_u32;
 	std::vector<char32_t> s2_u32;
@@ -295,7 +306,7 @@ int StrCmpUtf8NormalizedFolded(const char* s1, const char* s2, bool case_fold)
 	return 0;
 }
 
-bool Utf8toUtf32(std::vector<char32_t> &str32, const char* str)
+bool Utf8toUtf32(std::vector<char32_t> &str32, const uint8_t* str)
 {
 	size_t ip = 0;
 	int cnt = 0;
@@ -395,7 +406,7 @@ bool GetPassword(std::string &pw)
 #endif
 }
 
-size_t DecompressZLib(uint8_t *dst, unsigned int dst_size, const uint8_t *src, unsigned int src_size) // zstream can't take more than unsigned int for src and dst size
+size_t DecompressZLib(uint8_t *dst, unsigned int dst_size, const uint8_t *src, unsigned int src_size)
 {
 	// size_t nwr = 0;
 	int ret;
@@ -503,7 +514,7 @@ size_t DecompressLZVN(uint8_t * dst, size_t dst_size, const uint8_t * src, size_
 	return static_cast<size_t>(state.dst - dst);
 }
 
-size_t DecompressBZ2(uint8_t * dst, unsigned int dst_size, const uint8_t * src, unsigned int src_size) // zstream can't take more than unsigned int for src and dst size
+size_t DecompressBZ2(uint8_t *dst, unsigned int dst_size, const uint8_t *src, unsigned int src_size)
 {
 	bz_stream strm;
 
@@ -528,3 +539,13 @@ size_t DecompressLZFSE(uint8_t * dst, size_t dst_size, const uint8_t * src, size
 	return lzfse_decode_buffer(dst, dst_size, src, src_size, nullptr);
 }
 
+int log2(uint32_t val)
+{
+	int r = 0;
+	if (val & 0xFFFF0000) { val >>= 16; r += 16; }
+	if (val & 0xFF00) { val >>= 8; r += 8; }
+	if (val & 0xF0) { val >>= 4; r += 4; }
+	if (val & 0xC) { val >>= 2; r += 2; }
+	if (val & 0x2) { val >>= 1; r += 1; }
+	return r;
+}

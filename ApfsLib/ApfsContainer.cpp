@@ -30,16 +30,21 @@
 int g_debug = 0;
 bool g_lax = false;
 
-ApfsContainer::ApfsContainer(Device &disk, uint64_t start/*, uint64_t len*/) :
-	m_disk(disk),
-	m_part_start(start),
-//	m_part_len(len),
-	m_nodemap_vol(*this),
-	m_nidmap_bt(*this),
-	m_oldmgr_bt(*this),
-	m_oldvol_bt(*this),
+ApfsContainer::ApfsContainer(Device *disk_main, uint64_t main_start, uint64_t main_len, Device *disk_tier2, uint64_t tier2_start, uint64_t tier2_len) :
+	m_main_disk(disk_main),
+	m_main_part_start(main_start),
+	m_main_part_len(main_len),
+	m_tier2_disk(disk_tier2),
+	m_tier2_part_start(tier2_start),
+	m_tier2_part_len(tier2_len),
+	m_cpm(*this),
+	m_omap(*this),
+	// m_omap_tree(*this),
+	m_fq_tree_mgr(*this),
+	m_fq_tree_vol(*this),
 	m_keymgr(*this)
 {
+	m_sm = nullptr;
 }
 
 ApfsContainer::~ApfsContainer()
@@ -48,70 +53,121 @@ ApfsContainer::~ApfsContainer()
 
 bool ApfsContainer::Init()
 {
-	std::vector<byte_t> blk;
+	std::vector<uint8_t> blk;
 
 	blk.resize(0x1000);
 
-	if (!m_disk.Read(blk.data(), m_part_start, 0x1000))
-		return false;
-
-	memcpy(&m_sb, blk.data(), sizeof(APFS_NX_Superblock));
-
-	if (m_sb.nx_magic != 0x4253584E)
-		return false;
-
-	if (m_sb.nx_block_size != 0x1000)
+	if (!m_main_disk->Read(blk.data(), m_main_part_start, 0x1000))
 	{
-		blk.resize(m_sb.nx_block_size);
-		m_disk.Read(blk.data(), m_part_start, blk.size());
+		std::cerr << "Reading block 0 from main device failed." << std::endl;
+		return false;
+	}
+
+	memcpy(&m_nx, blk.data(), sizeof(nx_superblock_t));
+
+	if (m_nx.nx_magic != NX_MAGIC)
+	{
+		std::cerr << "This doesn't seem to be an apfs volume (invalid superblock)." << std::endl;
+		return false;
+	}
+
+	if (m_nx.nx_block_size != 0x1000)
+	{
+		blk.resize(m_nx.nx_block_size);
+		m_main_disk->Read(blk.data(), m_main_part_start, blk.size());
 	}
 
 	if (!VerifyBlock(blk.data(), blk.size()))
 		return false;
 
-	memcpy(&m_sb, blk.data(), sizeof(APFS_NX_Superblock));
+	memcpy(&m_nx, blk.data(), sizeof(nx_superblock_t));
 
 #if 1 // Scan container for most recent superblock (might fix segfaults)
 	uint64_t max_xid = 0;
-	uint64_t max_bid = 0;
-	uint64_t bid;
-	std::vector<byte_t> tmp;
+	paddr_t max_paddr = 0;
+	paddr_t paddr;
+	std::vector<uint8_t> tmp;
 
-	tmp.resize(m_sb.nx_block_size);
+	tmp.resize(m_nx.nx_block_size);
 
-	for (bid = m_sb.nx_xp_desc_base; bid < (m_sb.nx_xp_desc_base + m_sb.nx_xp_desc_blocks); bid++)
+	for (paddr = m_nx.nx_xp_desc_base; paddr < (m_nx.nx_xp_desc_base + m_nx.nx_xp_desc_blocks); paddr++)
 	{
-		m_disk.Read(tmp.data(), m_part_start + bid * m_sb.nx_block_size, m_sb.nx_block_size);
+		if (!ReadBlocks(tmp.data(), paddr, 1))
+			return false;
+
 		if (!VerifyBlock(tmp.data(), tmp.size()))
 			continue;
 
-		const APFS_NX_Superblock *sb = reinterpret_cast<const APFS_NX_Superblock *>(tmp.data());
-		if (APFS_OBJ_TYPE(sb->hdr.o_type) != BlockType_NXSB)
+		const nx_superblock_t *sb = reinterpret_cast<const nx_superblock_t *>(tmp.data());
+		if ((sb->nx_o.o_type & OBJECT_TYPE_MASK) != OBJECT_TYPE_NX_SUPERBLOCK)
 			continue;
 
-		if (sb->hdr.o_xid > max_xid)
+		if (sb->nx_o.o_xid > max_xid)
 		{
-			max_xid = sb->hdr.o_xid;
-			max_bid = bid;
+			max_xid = sb->nx_o.o_xid;
+			max_paddr = paddr;
 		}
 	}
 
-	if (max_xid > m_sb.hdr.o_xid)
+	if (max_xid > m_nx.nx_o.o_xid)
 	{
 		if (g_debug & Dbg_Errors)
-			std::cout << "Found more recent xid " << max_xid << " than superblock 0 contained (" << m_sb.hdr.o_xid << ")." << std::endl;
+			std::cout << "Found more recent xid " << max_xid << " than superblock 0 contained (" << m_nx.nx_o.o_xid << ")." << std::endl;
 
-		m_disk.Read(tmp.data(), m_part_start + max_bid * m_sb.nx_block_size, m_sb.nx_block_size);
-		memcpy(&m_sb, tmp.data(), sizeof(APFS_NX_Superblock));
+		ReadBlocks(tmp.data(), max_paddr, 1);
+
+		memcpy(&m_nx, tmp.data(), sizeof(nx_superblock_t));
 	}
 #endif
 
-	if (!m_nodemap_vol.Init(m_sb.nx_omap_oid, m_sb.hdr.o_xid))
-		return false;
-
-	if ((m_sb.nx_keybag_base != 0) && (m_sb.nx_keybag_blocks != 0))
+	if ((m_nx.nx_incompatible_features & NX_INCOMPAT_FUSION) && !m_tier2_disk)
 	{
-		if (!m_keymgr.Init(m_sb.nx_keybag_base, m_sb.nx_keybag_blocks, m_sb.nx_uuid))
+		std::cerr << "Need to specify two devices for a fusion drive." << std::endl;
+		return false;
+	}
+
+	if (!m_cpm.Init(m_nx.nx_xp_desc_base + m_nx.nx_xp_desc_index, m_nx.nx_xp_desc_len - 1))
+	{
+		std::cerr << "Failed to load checkpoint map" << std::endl;
+		return false;
+	}
+
+	if (!m_omap.Init(m_nx.nx_omap_oid, m_nx.nx_o.o_xid))
+	{
+		std::cerr << "Failed to load nx omap" << std::endl;
+		return false;
+	}
+
+	omap_res_t omr;
+	if (!m_cpm.Lookup(omr, m_nx.nx_spaceman_oid, m_nx.nx_o.o_xid))
+	{
+		std::cerr << "Failed to map spaceman oid" << std::endl;
+		return false;
+	}
+
+	m_sm_data.resize(GetBlocksize());
+	ReadBlocks(m_sm_data.data(), omr.paddr, 1);
+	m_sm = reinterpret_cast<const spaceman_phys_t *>(m_sm_data.data());
+
+	if ((m_sm->sm_o.o_type & OBJECT_TYPE_MASK) != OBJECT_TYPE_SPACEMAN)
+	{
+		std::cerr << "Spaceman has wrong type " << m_sm->sm_o.o_type << std::endl;
+		return false;
+	}
+
+	if (m_sm->sm_fq[SFQ_IP].sfq_tree_oid != 0)
+		m_fq_tree_mgr.Init(m_sm->sm_fq[SFQ_IP].sfq_tree_oid, m_sm->sm_o.o_xid, &m_cpm);
+
+	if (m_sm->sm_fq[SFQ_MAIN].sfq_tree_oid != 0)
+		m_fq_tree_vol.Init(m_sm->sm_fq[SFQ_MAIN].sfq_tree_oid, m_sm->sm_o.o_xid, &m_cpm);
+
+	// m_omap_tree.Init(m_nx.nx_omap_oid, m_nx.hdr.o_xid, nullptr);
+
+	// m_sb.nx_spaceman_oid
+
+	if ((m_nx.nx_keylocker.pr_start_addr != 0) && (m_nx.nx_keylocker.pr_block_count != 0))
+	{
+		if (!m_keymgr.Init(m_nx.nx_keylocker.pr_start_addr, m_nx.nx_keylocker.pr_block_count, m_nx.nx_uuid))
 		{
 			std::cerr << "Initialization of KeyManager failed." << std::endl;
 			return false;
@@ -121,11 +177,11 @@ bool ApfsContainer::Init()
 	return true;
 }
 
-ApfsVolume *ApfsContainer::GetVolume(int index, const std::string &passphrase)
+ApfsVolume *ApfsContainer::GetVolume(unsigned int index, const std::string &passphrase)
 {
 	ApfsVolume *vol = nullptr;
-	uint64_t nodeid;
-	node_info_t ni;
+	oid_t oid;
+	omap_res_t omr;
 	bool rc;
 
 	if (index >= 100)
@@ -133,21 +189,21 @@ ApfsVolume *ApfsContainer::GetVolume(int index, const std::string &passphrase)
 
 	m_passphrase = passphrase;
 
-	nodeid = m_sb.nx_fs_oid[index];
+	oid = m_nx.nx_fs_oid[index];
 
-	if (nodeid == 0)
+	if (oid == 0)
 		return nullptr;
 
-	if (!m_nodemap_vol.GetBlockID(ni, nodeid, m_sb.hdr.o_xid))
+	if (!m_omap.Lookup(omr, oid, m_nx.nx_o.o_xid))
 		return nullptr;
 
 	// std::cout << std::hex << "Loading Volume " << index << ", nodeid = " << nodeid << ", version = " << m_sb.hdr.version << ", blkid = " << blkid << std::endl;
 
-	if (ni.bid == 0)
+	if (omr.paddr == 0)
 		return nullptr;
 
 	vol = new ApfsVolume(*this);
-	rc = vol->Init(ni.bid);
+	rc = vol->Init(omr.paddr);
 
 	if (rc == false)
 	{
@@ -158,39 +214,85 @@ ApfsVolume *ApfsContainer::GetVolume(int index, const std::string &passphrase)
 	return vol;
 }
 
-int ApfsContainer::GetVolumeCnt() const
+unsigned int ApfsContainer::GetVolumeCnt() const
 {
-	int k;
+	unsigned int k;
 
 	for (k = 0; k < 100; k++)
 	{
-		if (m_sb.nx_fs_oid[k] == 0)
+		if (m_nx.nx_fs_oid[k] == 0)
 			break;
 	}
 
 	return k;
 }
 
-bool ApfsContainer::ReadBlocks(byte_t * data, uint64_t blkid, uint64_t blkcnt) const
+bool ApfsContainer::GetVolumeInfo(unsigned int fsid, apfs_superblock_t& apsb)
+{
+	oid_t oid;
+	omap_res_t omr;
+	std::vector<uint8_t> apsb_raw;
+
+	if (fsid >= 100)
+		return false;
+
+	oid = m_nx.nx_fs_oid[fsid];
+
+	if (oid == 0)
+		return false;
+
+	if (!m_omap.Lookup(omr, oid, m_nx.nx_o.o_xid))
+		return false;
+
+	if (omr.paddr == 0)
+		return false;
+
+	apsb_raw.resize(GetBlocksize());
+
+	if (!ReadAndVerifyHeaderBlock(apsb_raw.data(), omr.paddr))
+		return false;
+
+	memcpy(&apsb, apsb_raw.data(), sizeof(apfs_superblock_t));
+
+	return true;
+}
+
+
+bool ApfsContainer::ReadBlocks(uint8_t * data, paddr_t paddr, uint64_t blkcnt) const
 {
 	uint64_t offs;
 	uint64_t size;
 
-	if ((blkid + blkcnt) > m_sb.nx_block_count)
-		return false;
+	//if ((paddr + blkcnt) > m_nx.nx_block_count)
+	//	return false;
 
-	offs = m_sb.nx_block_size * blkid + m_part_start;
-	size = m_sb.nx_block_size * blkcnt;
+	offs = m_nx.nx_block_size * paddr;
+	size = m_nx.nx_block_size * blkcnt;
 
-	return m_disk.Read(data, offs, size);
+	if (offs & FUSION_TIER2_DEVICE_BYTE_ADDR)
+	{
+		if (!m_tier2_disk)
+			return false;
+
+		offs = offs - FUSION_TIER2_DEVICE_BYTE_ADDR + m_tier2_part_start;
+		return m_tier2_disk->Read(data, offs, size);
+	}
+	else
+	{
+		if (!m_main_disk)
+			return false;
+
+		offs = offs + m_main_part_start;
+		return m_main_disk->Read(data, offs, size);
+	}
 }
 
-bool ApfsContainer::ReadAndVerifyHeaderBlock(byte_t * data, uint64_t blkid) const
+bool ApfsContainer::ReadAndVerifyHeaderBlock(uint8_t * data, paddr_t paddr) const
 {
-	if (!ReadBlocks(data, blkid))
+	if (!ReadBlocks(data, paddr))
 		return false;
 
-	if (!VerifyBlock(data, m_sb.nx_block_size))
+	if (!VerifyBlock(data, m_nx.nx_block_size))
 		return false;
 
 	return true;
@@ -221,8 +323,13 @@ bool ApfsContainer::GetPasswordHint(std::string & hint, const apfs_uuid_t & vol_
 
 void ApfsContainer::dump(BlockDumper& bd)
 {
-	std::vector<byte_t> blk;
-	uint64_t blkid;
+	std::vector<uint8_t> blk;
+	paddr_t paddr;
+
+	bd.st() << "Dumping Container" << std::endl;
+	bd.st() << "-----------------" << std::endl;
+	bd.st() << std::endl;
+	bd.st() << std::endl;
 
 	blk.resize(GetBlocksize());
 	ReadAndVerifyHeaderBlock(blk.data(), 0);
@@ -240,13 +347,13 @@ void ApfsContainer::dump(BlockDumper& bd)
 		*/
 
 #if 0
-	for (blkid = m_sb.blockid_sb_area_start; blkid < (m_sb.blockid_sb_area_start + m_sb.sb_area_cnt); blkid++)
+	for (blkid = m_sb.nx_xp_desc_base; blkid < (m_sb.nx_xp_desc_base + m_sb.nx_xp_desc_blocks); blkid++)
 	{
 		ReadAndVerifyHeaderBlock(blk.data(), blkid);
 		bd.DumpNode(blk.data(), blkid);
 	}
 
-	for (blkid = m_sb.blockid_spaceman_area_start; blkid < (m_sb.blockid_spaceman_area_start + m_sb.spaceman_area_cnt); blkid++)
+	for (blkid = m_sb.nx_xp_data_base; blkid < (m_sb.nx_xp_data_base + m_sb.nx_xp_data_blocks); blkid++)
 	{
 		ReadAndVerifyHeaderBlock(blk.data(), blkid);
 		bd.DumpNode(blk.data(), blkid);
@@ -254,21 +361,86 @@ void ApfsContainer::dump(BlockDumper& bd)
 #endif
 
 #if 1
-	for (blkid = m_sb.nx_xp_desc_base + m_sb.nx_xp_desc_index; blkid < (m_sb.nx_xp_desc_base + m_sb.nx_xp_desc_index + m_sb.nx_xp_desc_len); blkid++)
+	bd.st() << std::endl << "Dumping XP desc area (current SB):" << std::endl;
+	for (paddr = m_nx.nx_xp_desc_base + m_nx.nx_xp_desc_index; paddr < (m_nx.nx_xp_desc_base + m_nx.nx_xp_desc_index + m_nx.nx_xp_desc_len); paddr++)
 	{
-		ReadAndVerifyHeaderBlock(blk.data(), blkid);
-		bd.DumpNode(blk.data(), blkid);
+		ReadAndVerifyHeaderBlock(blk.data(), paddr);
+		bd.DumpNode(blk.data(), paddr);
 	}
 
-	for (blkid = m_sb.nx_xp_data_base + m_sb.nx_xp_data_index; blkid < (m_sb.nx_xp_data_base + m_sb.nx_xp_data_index + m_sb.nx_xp_data_len); blkid++)
+	bd.st() << std::endl << "Dumping XP data area (current SB):" << std::endl;
+	for (paddr = m_nx.nx_xp_data_base + m_nx.nx_xp_data_index; paddr < (m_nx.nx_xp_data_base + m_nx.nx_xp_data_index + m_nx.nx_xp_data_len); paddr++)
 	{
-		ReadAndVerifyHeaderBlock(blk.data(), blkid);
-		bd.DumpNode(blk.data(), blkid);
+		ReadAndVerifyHeaderBlock(blk.data(), paddr);
+		bd.DumpNode(blk.data(), paddr);
 	}
 #endif
 
-	m_nodemap_vol.dump(bd);
-	m_nidmap_bt.dump(bd);
-	m_oldmgr_bt.dump(bd);
-	m_oldvol_bt.dump(bd);
+	if (m_nx.nx_efi_jumpstart)
+	{
+		ReadAndVerifyHeaderBlock(blk.data(), m_nx.nx_efi_jumpstart);
+		bd.DumpNode(blk.data(), m_nx.nx_efi_jumpstart);
+	}
+
+	ReadAndVerifyHeaderBlock(blk.data(), m_nx.nx_omap_oid);
+	bd.DumpNode(blk.data(), m_nx.nx_omap_oid);
+
+	bd.DumpNode(m_sm_data.data(), m_nx.nx_spaceman_oid);
+
+	uint64_t oid;
+	size_t k;
+
+	for (size_t k = 0; k < m_sm->sm_ip_bm_block_count; k++)
+	{
+		oid = m_sm->sm_ip_bm_base + k;
+
+		bd.st() << "Dumping IP Bitmap block " << k << std::endl;
+
+		ReadBlocks(blk.data(), oid);
+		bd.DumpNode(blk.data(), oid);
+
+		bd.st() << std::endl;
+	}
+
+	m_omap.dump(bd);
+	// m_omap_tree.dump(bd);
+	m_fq_tree_mgr.dump(bd);
+	m_fq_tree_vol.dump(bd);
+
+	const le<uint64_t> *cxb_oid = reinterpret_cast<const le<uint64_t> *>(m_sm_data.data() + m_sm->sm_dev[SD_MAIN].sm_addr_offset);
+	uint32_t cib_cnt = m_sm->sm_dev[SD_MAIN].sm_cib_count;
+	uint32_t cab_cnt = m_sm->sm_dev[SD_MAIN].sm_cab_count;
+
+	uint32_t cib_id;
+	uint32_t cab_id;
+
+	std::vector<uint64_t> cib_oid_list;
+	std::vector<uint8_t> cib_data(GetBlocksize());
+
+	cib_oid_list.reserve(cib_cnt);
+
+	if (cab_cnt != 0)
+	{
+		for (cab_id = 0; cab_id < cab_cnt; cab_id++)
+		{
+			ReadAndVerifyHeaderBlock(blk.data(), cxb_oid[cab_id]);
+			bd.DumpNode(blk.data(), cxb_oid[cab_id]);
+
+			const cib_addr_block_t *cab = reinterpret_cast<cib_addr_block_t *>(blk.data());
+
+			for (cib_id = 0; cib_id < cab->cab_cib_count; cib_id++)
+				cib_oid_list.push_back(cab->cab_cib_addr[cib_id]);
+		}
+	}
+	else
+	{
+		for (cib_id = 0; cib_id < cib_cnt; cib_id++)
+			cib_oid_list.push_back(cxb_oid[cib_id]);
+	}
+
+	for (cib_id = 0; cib_id < cib_cnt; cib_id++)
+	{
+		ReadAndVerifyHeaderBlock(blk.data(), cib_oid_list[cib_id]);
+		bd.DumpNode(blk.data(), cib_oid_list[cib_id]);
+	}
 }

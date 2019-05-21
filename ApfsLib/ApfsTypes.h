@@ -21,16 +21,9 @@
 
 #include <cstdint>
 
-// Debug level - defined in ApfsContainer.cpp
-extern int g_debug;
-// Lax mode - defined in ApfsContainer.cpp
-extern bool g_lax;
+// Commonly used FS types
+typedef unsigned char apfs_uuid_t[16];
+typedef uint64_t paddr_t; // Apple: int64_t
+typedef uint64_t oid_t;
+typedef uint64_t xid_t;
 
-enum DbgFlags
-{
-	Dbg_Errors = 1,
-	Dbg_Info = 2,
-	Dbg_Dir = 4,
-	Dbg_Cmpfs = 8,
-	Dbg_Crypto = 16
-};
