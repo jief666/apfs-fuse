@@ -594,7 +594,7 @@ bool KeyManager::GetVolumeKey(uint8_t* vek, const apfs_uuid_t& volume_uuid, cons
 
 	uint8_t dk[0x20];
 	uint8_t kek[0x20] = { 0 };
-	uint64_t iv;
+	uint64_t iv = 0xA6A6A6A6A6A6A6A6ULL;
 	bool rc = false;
 	const keybag_entry_t *ke_kek;
 	const keybag_entry_t *ke_vek;
