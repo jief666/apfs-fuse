@@ -44,6 +44,8 @@ public:
 	ApfsVolume *GetVolume(unsigned int index, const std::string &passphrase = std::string());
 	unsigned int GetVolumeCnt() const;
 	bool GetVolumeInfo(unsigned int fsid, apfs_superblock_t &apsb);
+	std::string GetPasswordHintForVolumeIndex(unsigned int index);
+	bool IsVolumeEncrypted(unsigned int index);
 
 	bool ReadBlocks(uint8_t *data, paddr_t paddr, uint64_t blkcnt = 1) const;
 	bool ReadAndVerifyHeaderBlock(uint8_t *data, paddr_t paddr) const;

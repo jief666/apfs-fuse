@@ -26,6 +26,7 @@
 #include "Util.h"
 #include "BlockDumper.h"
 #include "Global.h"
+#include "../../Utils.h"
 
 int g_debug = 0;
 bool g_lax = false;
@@ -175,6 +176,31 @@ bool ApfsContainer::Init()
 	}
 
 	return true;
+}
+
+bool ApfsContainer::IsVolumeEncrypted(unsigned int index)
+{
+	apfs_superblock_t apfs_sb;
+	if ( !GetVolumeInfo(index, apfs_sb) )
+		throw stringPrintf("Cannot get volume info for index %d", index);
+
+	if (apfs_sb.apfs_magic != APFS_MAGIC)
+		throw stringPrintf("m_sb.apfs_magic != APFS_MAGIC");
+
+	return ! ((apfs_sb.apfs_fs_flags & 3) == APFS_FS_UNENCRYPTED);
+}
+
+std::string ApfsContainer::GetPasswordHintForVolumeIndex(unsigned int index)
+{
+	apfs_superblock_t apfs_sb;
+	if ( !GetVolumeInfo(index, apfs_sb) )
+		throw stringPrintf("Cannot get volume info for index %d", index);
+
+	std::string hint;
+	if ( !GetPasswordHint(hint, apfs_sb.apfs_vol_uuid) )
+		return "";
+
+	return hint;
 }
 
 ApfsVolume *ApfsContainer::GetVolume(unsigned int index, const std::string &passphrase)
