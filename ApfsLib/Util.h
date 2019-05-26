@@ -51,6 +51,6 @@ size_t DecompressLZVN(uint8_t *dst, size_t dst_size, const uint8_t *src, size_t 
 size_t DecompressBZ2(uint8_t *dst, unsigned int dst_size, const uint8_t *src, unsigned int src_size); // bz_stream can't take more than unsigned int for src and dst size
 size_t DecompressLZFSE(uint8_t *dst, size_t dst_size, const uint8_t *src, size_t src_size);
 
-bool GetPassword(std::string &pw);
+//bool GetPassword(std::string &pw);
 
 int log2(uint32_t val);

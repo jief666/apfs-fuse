@@ -374,37 +374,37 @@ bool Utf8toUtf32(std::vector<char32_t> &str32, const uint8_t* str)
 
 	return ok;
 }
-
-bool GetPassword(std::string &pw)
-{
-#if defined(__linux__) || defined(__APPLE__)
-	struct termios told, tnew;
-	FILE *stream = stdin;
-
-	/* Turn echoing off and fail if we can’t. */
-	if (tcgetattr (fileno (stream), &told) != 0)
-		return false;
-	tnew = told;
-	tnew.c_lflag &= ~ECHO;
-	if (tcsetattr (fileno (stream), TCSAFLUSH, &tnew) != 0)
-		return false;
-
-	/* Read the password. */
-	std::getline(std::cin, pw);
-
-	/* Restore terminal. */
-	(void) tcsetattr (fileno (stream), TCSAFLUSH, &told);
-
-	std::cout << std::endl;
-
-	return true;
-#else
-	std::getline(std::cin, pw);
-	std::cout << std::endl;
-
-	return true;
-#endif
-}
+//
+//bool GetPassword(std::string &pw)
+//{
+//#if defined(__linux__) || defined(__APPLE__)
+//	struct termios told, tnew;
+//	FILE *stream = stdin;
+//
+//	/* Turn echoing off and fail if we can’t. */
+//	if (tcgetattr (fileno (stream), &told) != 0)
+//		return false;
+//	tnew = told;
+//	tnew.c_lflag &= ~ECHO;
+//	if (tcsetattr (fileno (stream), TCSAFLUSH, &tnew) != 0)
+//		return false;
+//
+//	/* Read the password. */
+//	std::getline(std::cin, pw);
+//
+//	/* Restore terminal. */
+//	(void) tcsetattr (fileno (stream), TCSAFLUSH, &told);
+//
+//	std::cout << std::endl;
+//
+//	return true;
+//#else
+//	std::getline(std::cin, pw);
+//	std::cout << std::endl;
+//
+//	return true;
+//#endif
+//}
 
 size_t DecompressZLib(uint8_t *dst, unsigned int dst_size, const uint8_t *src, unsigned int src_size)
 {

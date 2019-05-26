@@ -80,17 +80,17 @@ bool ApfsVolume::Init(paddr_t apsb_paddr)
 
 		if (!m_container.GetVolumeKey(vek, m_sb.apfs_vol_uuid))
 		{
-			if (m_container.GetPasswordHint(str, m_sb.apfs_vol_uuid))
-				std::cout << "Hint: " << str << std::endl;
-
-			std::cout << "Enter Password: ";
-			GetPassword(str);
-
-			if (!m_container.GetVolumeKey(vek, m_sb.apfs_vol_uuid, str.c_str()))
-			{
+//			if (m_container.GetPasswordHint(str, m_sb.apfs_vol_uuid))
+//				std::cout << "Hint: " << str << std::endl;
+//
+//			std::cout << "Enter Password: ";
+//			GetPassword(str);
+//
+//			if (!m_container.GetVolumeKey(vek, m_sb.apfs_vol_uuid, str.c_str()))
+//			{
 				std::cout << "Wrong password!" << std::endl;
 				return false;
-			}
+//			}
 		}
 
 		APFSLibCrypto_aes_xtx_setkey(vek, 16, vek+16, 16, &m_xts);
