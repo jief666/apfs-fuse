@@ -312,7 +312,7 @@ bool BTree::GetIterator(BTreeIterator& it, const void* key, size_t key_size, BTC
 	return true;
 }
 
-
+#ifdef APFS_BLOCKDUMPER
 void BTree::dump(BlockDumper& out)
 {
 	if (m_root_node)
@@ -354,6 +354,7 @@ void BTree::DumpTreeInternal(BlockDumper& out, const std::shared_ptr<BTreeNode> 
 		}
 	}
 }
+#endif
 
 std::shared_ptr<BTreeNode> BTree::GetNode(oid_t oid, const std::shared_ptr<BTreeNode> &parent, uint32_t parent_index)
 {

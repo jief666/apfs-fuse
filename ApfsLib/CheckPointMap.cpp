@@ -59,16 +59,17 @@ bool CheckPointMap::Lookup(omap_res_t & res, oid_t oid, xid_t xid)
 	for (blk_offs = 0; blk_offs < m_cpm_data.size(); blk_offs += m_blksize)
 	{
 		cpm = reinterpret_cast<const checkpoint_map_phys_t *>(m_cpm_data.data() + blk_offs);
+        checkpoint_mapping_t* cpm_map = (checkpoint_mapping_t*)(cpm + 1);
 
 		cnt = cpm->cpm_count;
 
 		for (k = 0; k < cnt; k++)
 		{
-			if (oid == cpm->cpm_map[k].cpm_oid)
+			if (oid == cpm_map[k].cpm_oid)
 			{
 				res.flags = 0;
-				res.size = cpm->cpm_map[k].cpm_size;
-				res.paddr = cpm->cpm_map[k].cpm_paddr;
+				res.size = cpm_map[k].cpm_size;
+				res.paddr = cpm_map[k].cpm_paddr;
 
 				return true;
 			}
@@ -78,7 +79,13 @@ bool CheckPointMap::Lookup(omap_res_t & res, oid_t oid, xid_t xid)
 	return false;
 }
 
+
+
+#ifdef APFS_BLOCKDUMPER
+
 void CheckPointMap::dump(BlockDumper& bd)
 {
 	bd.DumpNode(m_cpm_data.data(), m_cpm_oid);
 }
+
+#endif

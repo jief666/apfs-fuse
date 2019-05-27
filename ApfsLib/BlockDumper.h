@@ -16,6 +16,7 @@
 	You should have received a copy of the GNU General Public License
 	along with apfs-fuse.  If not, see <http://www.gnu.org/licenses/>.
 */
+#ifdef APFS_BLOCKDUMPER
 
 #pragma once
 
@@ -107,3 +108,6 @@ private:
 	const uint8_t *m_block;
 	const size_t m_blocksize;
 };
+
+
+#endif

@@ -140,7 +140,7 @@ struct nx_efi_jumpstart_t {
 	le<uint32_t> nej_efi_file_len;
 	le<uint32_t> nej_num_extents;
 	uint64_t nej_reserved[16];
-	prange_t nej_rec_extents[];
+//	prange_t nej_rec_extents[];
 };
 
 
@@ -249,7 +249,7 @@ struct checkpoint_map_phys_t {
 	obj_phys_t cpm_o;
 	le<uint32_t> cpm_flags;
 	le<uint32_t> cpm_count;
-	checkpoint_mapping_t cpm_map[];
+//	checkpoint_mapping_t cpm_map[];
 };
 
 struct evict_mapping_val_t {
@@ -896,14 +896,14 @@ struct chunk_info_block_t {
 	obj_phys_t cib_o;
 	le<uint32_t> cib_index;
 	le<uint32_t> cib_chunk_info_count;
-	chunk_info_t cib_chunk_info[];
+//	chunk_info_t cib_chunk_info[];
 };
 
 struct cib_addr_block_t {
 	obj_phys_t cab_o;
 	le<uint32_t> cab_index;
 	le<uint32_t> cab_cib_count;
-	le<paddr_t> cab_cib_addr[];
+//	le<paddr_t> cab_cib_addr[];
 };
 
 
@@ -1042,7 +1042,7 @@ struct nx_reap_list_phys_t {
 	le<uint32_t> nrl_first;
 	le<uint32_t> nrl_last;
 	le<uint32_t> nrl_free;
-	nx_reap_list_entry_t nrl_entries[];
+//	nx_reap_list_entry_t nrl_entries[];
 };
 
 enum {
@@ -1293,7 +1293,7 @@ struct fusion_wbc_list_phys_t {
 	le<uint32_t> fwlp_indexEnd;
 	le<uint32_t> fwlp_indexMax;
 	le<uint32_t> fwlp_reserved;
-	fusion_wbc_list_entry_t fwlp_listEntries[];
+//	fusion_wbc_list_entry_t fwlp_listEntries[];
 };
 
 constexpr uint64_t FUSION_TIER2_DEVICE_BYTE_ADDR = 0x4000000000000000ULL;

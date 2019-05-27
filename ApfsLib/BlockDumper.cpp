@@ -16,6 +16,7 @@
 	You should have received a copy of the GNU General Public License
 	along with apfs-fuse.  If not, see <http://www.gnu.org/licenses/>.
 */
+#ifdef APFS_BLOCKDUMPER
 
 #include "BlockDumper.h"
 #include "Decmpfs.h"
@@ -2076,3 +2077,6 @@ void BlockDumper::dumpm(const char* name, const void* base, const apfs_uuid_t& u
 
 	m_os << name << " : " << setw(16) << uuidstr(uuid) << endl;
 }
+
+#endif
+

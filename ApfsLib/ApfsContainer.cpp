@@ -347,6 +347,8 @@ bool ApfsContainer::GetPasswordHint(std::string & hint, const apfs_uuid_t & vol_
 	return m_keymgr.GetPasswordHint(hint, vol_uuid);
 }
 
+#ifdef APFS_BLOCKDUMPER
+
 void ApfsContainer::dump(BlockDumper& bd)
 {
 	std::vector<uint8_t> blk;
@@ -470,3 +472,5 @@ void ApfsContainer::dump(BlockDumper& bd)
 		bd.DumpNode(blk.data(), cib_oid_list[cib_id]);
 	}
 }
+#endif
+

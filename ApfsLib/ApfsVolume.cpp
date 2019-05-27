@@ -109,6 +109,7 @@ bool ApfsVolume::Init(paddr_t apsb_paddr)
 	return true;
 }
 
+#ifdef APFS_BLOCKDUMPER
 void ApfsVolume::dump(BlockDumper& bd)
 {
 	std::vector<uint8_t> blk;
@@ -130,6 +131,7 @@ void ApfsVolume::dump(BlockDumper& bd)
 	m_extentref_tree.dump(bd);
 	m_snap_meta_tree.dump(bd);
 }
+#endif
 
 bool ApfsVolume::ReadBlocks(uint8_t * data, paddr_t paddr, uint64_t blkcnt, uint64_t xts_tweak)
 {

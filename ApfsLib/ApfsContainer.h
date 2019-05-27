@@ -56,9 +56,10 @@ public:
 
 	bool GetVolumeKey(uint8_t *key, const apfs_uuid_t &vol_uuid, const char *password = nullptr);
 	bool GetPasswordHint(std::string &hint, const apfs_uuid_t &vol_uuid);
-
+#ifdef APFS_BLOCKDUMPER
 	void dump(BlockDumper& bd);
-
+#endif
+    
 private:
 	Device *m_main_disk;
 	const uint64_t m_main_part_start;

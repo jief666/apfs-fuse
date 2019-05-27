@@ -17,7 +17,9 @@ public:
 	bool Init(oid_t root_oid, uint32_t blk_count);
 	bool Lookup(omap_res_t & res, oid_t oid, xid_t xid) override;
 
+#ifdef APFS_BLOCKDUMPER
 	void dump(BlockDumper &bd);
+#endif
 
 private:
 	ApfsContainer &m_container;
